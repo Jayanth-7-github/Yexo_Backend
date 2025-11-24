@@ -124,6 +124,11 @@ class SocketService {
       await this.handleMessageSeen(socket, data);
     });
 
+    // Event: Message delivered
+    socket.on(SOCKET_EVENTS.MESSAGE_DELIVERED, async (data) => {
+      await this.handleMessageDelivered(socket, data);
+    });
+
     // Event: Disconnect
     socket.on(SOCKET_EVENTS.DISCONNECT, async () => {
       await this.handleDisconnect(socket);
@@ -312,6 +317,39 @@ class SocketService {
       );
     } catch (error) {
       logger.error("Error in handleMessageSeen:", error);
+      socket.emit(SOCKET_EVENTS.ERROR, { message: error.message });
+    }
+  }
+
+  /**
+   * Handle message delivered
+   */
+  async handleMessageDelivered(socket, data) {
+    try {
+      const { messageId, chatId } = data;
+      if (!messageId || !chatId) {
+        return socket.emit(SOCKET_EVENTS.ERROR, {
+          message: "messageId and chatId are required",
+        });
+      }
+      // Update message status to delivered
+      const message = await MessageService.updateMessageStatus(
+        messageId,
+        socket.userId,
+        MESSAGE_STATUS.DELIVERED
+      );
+      // Broadcast to all participants
+      this.io.to(`chat:${chatId}`).emit(SOCKET_EVENTS.MESSAGE_DELIVERED, {
+        messageId,
+        chatId,
+        userId: socket.userId,
+        deliveredAt: message.deliveredAt,
+      });
+      logger.info(
+        `Message ${messageId} marked as delivered by user ${socket.userId}`
+      );
+    } catch (error) {
+      logger.error("Error in handleMessageDelivered:", error);
       socket.emit(SOCKET_EVENTS.ERROR, { message: error.message });
     }
   }
