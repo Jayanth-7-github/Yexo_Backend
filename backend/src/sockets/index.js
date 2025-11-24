@@ -129,6 +129,50 @@ class SocketService {
       await this.handleMessageDelivered(socket, data);
     });
 
+    // Event: Initiate call
+    socket.on(SOCKET_EVENTS.CALL_INITIATE, (data) => {
+      // { targetUserId, callType: "video" | "audio" }
+      this.emitToUser(data.targetUserId, SOCKET_EVENTS.CALL_INITIATE, {
+        fromUserId: socket.userId,
+        callType: data.callType,
+      });
+    });
+
+    // Event: Offer SDP
+    socket.on(SOCKET_EVENTS.CALL_OFFER, (data) => {
+      // { targetUserId, offer }
+      this.emitToUser(data.targetUserId, SOCKET_EVENTS.CALL_OFFER, {
+        fromUserId: socket.userId,
+        offer: data.offer,
+      });
+    });
+
+    // Event: Answer SDP
+    socket.on(SOCKET_EVENTS.CALL_ANSWER, (data) => {
+      // { targetUserId, answer }
+      this.emitToUser(data.targetUserId, SOCKET_EVENTS.CALL_ANSWER, {
+        fromUserId: socket.userId,
+        answer: data.answer,
+      });
+    });
+
+    // Event: ICE Candidate
+    socket.on(SOCKET_EVENTS.CALL_ICE_CANDIDATE, (data) => {
+      // { targetUserId, candidate }
+      this.emitToUser(data.targetUserId, SOCKET_EVENTS.CALL_ICE_CANDIDATE, {
+        fromUserId: socket.userId,
+        candidate: data.candidate,
+      });
+    });
+
+    // Event: End call
+    socket.on(SOCKET_EVENTS.CALL_END, (data) => {
+      // { targetUserId }
+      this.emitToUser(data.targetUserId, SOCKET_EVENTS.CALL_END, {
+        fromUserId: socket.userId,
+      });
+    });
+
     // Event: Disconnect
     socket.on(SOCKET_EVENTS.DISCONNECT, async () => {
       await this.handleDisconnect(socket);

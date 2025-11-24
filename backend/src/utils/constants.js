@@ -66,6 +66,14 @@ const PAGINATION = {
   MAX_LIMIT: 100,
 };
 
+const CALL_EVENTS = {
+  CALL_INITIATE: "call_initiate",
+  CALL_OFFER: "call_offer",
+  CALL_ANSWER: "call_answer",
+  CALL_ICE_CANDIDATE: "call_ice_candidate",
+  CALL_END: "call_end",
+};
+
 module.exports = {
   USER_STATUS,
   MESSAGE_TYPE,
@@ -73,4 +81,5 @@ module.exports = {
   SOCKET_EVENTS,
   RATE_LIMIT,
   PAGINATION,
+  CALL_EVENTS,
 };
