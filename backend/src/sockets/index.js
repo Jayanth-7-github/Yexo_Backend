@@ -86,6 +86,13 @@ class SocketService {
     // Join user's personal room
     socket.join(`user:${userId}`);
 
+    // Send connection confirmation to client
+    socket.emit(SOCKET_EVENTS.AUTHENTICATED, {
+      userId,
+      socketId: socket.id,
+      timestamp: new Date(),
+    });
+
     // Emit user online to contacts (broadcast to all connected users for now)
     socket.broadcast.emit(SOCKET_EVENTS.USER_ONLINE, {
       userId,
@@ -136,16 +143,32 @@ class SocketService {
         });
       }
 
+      const joinedChats = [];
+      const failedChats = [];
+
       // Verify user has access to each chat and join rooms
       for (const chatId of chatIds) {
         try {
           const chat = await ChatService.getChatById(chatId, socket.userId);
           socket.join(`chat:${chatId}`);
+          joinedChats.push(chatId);
           logger.info(`User ${socket.userId} joined chat room: ${chatId}`);
         } catch (error) {
+          failedChats.push({ chatId, error: error.message });
           logger.error(`Error joining chat ${chatId}:`, error.message);
         }
       }
+
+      // Send acknowledgment
+      socket.emit(SOCKET_EVENTS.CHATS_JOINED, {
+        joined: joinedChats,
+        failed: failedChats,
+        timestamp: new Date(),
+      });
+
+      logger.info(
+        `User ${socket.userId} joined ${joinedChats.length} chats, failed ${failedChats.length}`
+      );
     } catch (error) {
       logger.error("Error in handleJoinChats:", error);
       socket.emit(SOCKET_EVENTS.ERROR, { message: error.message });
@@ -165,7 +188,22 @@ class SocketService {
         });
       }
 
-      // Create message
+      // Ensure sender is in the chat room (auto-join if not)
+      const rooms = Array.from(socket.rooms);
+      const chatRoom = `chat:${chatId}`;
+      if (!rooms.includes(chatRoom)) {
+        try {
+          const chat = await ChatService.getChatById(chatId, socket.userId);
+          socket.join(chatRoom);
+          logger.info(`User ${socket.userId} auto-joined chat room: ${chatId}`);
+        } catch (error) {
+          return socket.emit(SOCKET_EVENTS.ERROR, {
+            message: "Unauthorized or chat not found",
+          });
+        }
+      }
+
+      // Create message (content is encrypted in MessageService)
       const message = await MessageService.createMessage(
         chatId,
         socket.userId,
@@ -176,8 +214,15 @@ class SocketService {
         }
       );
 
-      // Emit to all participants in the chat room
-      this.io.to(`chat:${chatId}`).emit(SOCKET_EVENTS.NEW_MESSAGE, message);
+      // Emit to all participants in the chat room (including sender)
+      this.io.to(chatRoom).emit(SOCKET_EVENTS.NEW_MESSAGE, message);
+
+      // Send acknowledgment to sender
+      socket.emit(SOCKET_EVENTS.MESSAGE_SENT, {
+        success: true,
+        message,
+        timestamp: new Date(),
+      });
 
       logger.info(`Message sent in chat ${chatId} by user ${socket.userId}`);
     } catch (error) {

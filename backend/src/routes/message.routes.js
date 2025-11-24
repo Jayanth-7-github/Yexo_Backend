@@ -47,7 +47,24 @@ const getMessagesValidation = [
 // File upload middleware
 const upload = FileService.getUploadMiddleware();
 
-// Routes
+// Routes - Order matters! More specific routes BEFORE generic parameter routes
+router.post(
+  "/upload-multiple",
+  authenticate,
+  upload.array("files", 10),
+  messageController.uploadMultipleMedia
+);
+router.post(
+  "/upload",
+  authenticate,
+  upload.single("file"),
+  messageController.uploadMedia
+);
+router.patch(
+  "/chat/:chatId/mark-seen",
+  authenticate,
+  messageController.markChatAsSeen
+);
 router.get(
   "/:chatId",
   authenticate,
@@ -68,12 +85,6 @@ router.patch(
   updateStatusValidation,
   validate,
   messageController.updateMessageStatus
-);
-router.post(
-  "/upload",
-  authenticate,
-  upload.single("file"),
-  messageController.uploadMedia
 );
 router.delete("/:messageId", authenticate, messageController.deleteMessage);
 

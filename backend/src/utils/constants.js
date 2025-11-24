@@ -33,10 +33,12 @@ const SOCKET_EVENTS = {
 
   // Chat rooms
   JOIN_CHATS: "join_chats",
+  CHATS_JOINED: "chats_joined",
   LEAVE_CHAT: "leave_chat",
 
   // Messaging
   SEND_MESSAGE: "send_message",
+  MESSAGE_SENT: "message_sent",
   NEW_MESSAGE: "new_message",
   MESSAGE_DELIVERED: "message_delivered",
   MESSAGE_SEEN: "message_seen",

@@ -80,6 +80,26 @@ const uploadMedia = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Upload multiple media files
+ * POST /api/messages/upload-multiple
+ */
+const uploadMultipleMedia = asyncHandler(async (req, res) => {
+  if (!req.files || req.files.length === 0) {
+    return ApiResponse.badRequest(res, "No files uploaded");
+  }
+
+  const filesData = req.files.map((file) =>
+    FileService.processUploadedFile(file)
+  );
+
+  ApiResponse.success(
+    res,
+    filesData,
+    `${filesData.length} files uploaded successfully`
+  );
+});
+
+/**
  * Delete message
  * DELETE /api/messages/:messageId
  */
@@ -91,10 +111,31 @@ const deleteMessage = asyncHandler(async (req, res) => {
   ApiResponse.success(res, result);
 });
 
+/**
+ * Mark all messages in a chat as seen
+ * PATCH /api/messages/chat/:chatId/mark-seen
+ */
+const markChatAsSeen = asyncHandler(async (req, res) => {
+  const { chatId } = req.params;
+
+  const messages = await MessageService.markChatMessagesAsSeen(
+    chatId,
+    req.userId
+  );
+
+  ApiResponse.success(
+    res,
+    { count: messages.length },
+    "Messages marked as seen"
+  );
+});
+
 module.exports = {
   getChatMessages,
   sendMessage,
   updateMessageStatus,
   uploadMedia,
+  uploadMultipleMedia,
   deleteMessage,
+  markChatAsSeen,
 };
