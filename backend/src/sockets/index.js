@@ -11,6 +11,8 @@ const config = require("../config/config");
 // Store socket ID to user ID mapping
 const userSockets = new Map(); // userId -> Set of socketIds
 const socketUsers = new Map(); // socketId -> userId
+// Pending call timers keyed by `${fromUserId}:${targetUserId}` -> timeoutId
+const pendingCallTimers = new Map();
 
 class SocketService {
   constructor() {
@@ -130,23 +132,52 @@ class SocketService {
     });
 
     // Event: Initiate call
-    socket.on(SOCKET_EVENTS.CALL_INITIATE, (data, ack) => {
+    socket.on("call_initiate", (data, ack) => {
       // { targetUserId, callType: "video" | "audio" }
-      const forwarded = userSockets.has(data.targetUserId);
-      this.emitToUser(data.targetUserId, SOCKET_EVENTS.CALL_INITIATE, {
+      const targetId = data.targetUserId;
+      const forwarded = userSockets.has(targetId);
+      if (!forwarded) {
+        logger.warn(`[SOCKET] call_initiate: target ${targetId} not connected`);
+        // notify caller that callee is unavailable
+        socket.emit("call_unavailable", { targetUserId: targetId });
+        if (ack) ack({ success: true, forwarded: false });
+        return;
+      }
+
+      this.emitToUser(targetId, "call_initiate", {
         fromUserId: socket.userId,
         callType: data.callType,
       });
-      if (ack) ack({ success: true, forwarded });
+
+      // set a 30s timeout to notify both parties if unanswered
+      try {
+        const key = `${socket.userId}:${targetId}`;
+        if (pendingCallTimers.has(key)) {
+          clearTimeout(pendingCallTimers.get(key));
+          pendingCallTimers.delete(key);
+        }
+        const t = setTimeout(() => {
+          logger.info(`[SOCKET] call timeout for ${socket.userId} -> ${targetId}`);
+          // notify both sides
+          this.emitToUser(targetId, "call_timeout", { fromUserId: socket.userId });
+          this.emitToUser(socket.userId, "call_timeout", { targetUserId: targetId });
+          pendingCallTimers.delete(key);
+        }, 30000);
+        pendingCallTimers.set(key, t);
+      } catch (e) {
+        logger.error("Error scheduling call timeout:", e.message || e);
+      }
+
+      if (ack) ack({ success: true, forwarded: true });
     });
 
     // Event: Offer SDP
-    socket.on(SOCKET_EVENTS.CALL_OFFER, (data, ack) => {
+    socket.on("call_offer", (data, ack) => {
       // { targetUserId, offer }
       logger.info(`[SOCKET] CALL_OFFER received from ${socket.userId} for targetUserId ${data.targetUserId}`);
       logger.info(`[SOCKET] Offer payload: ${JSON.stringify(data.offer)}`);
       const forwarded = userSockets.has(data.targetUserId);
-      this.emitToUser(data.targetUserId, SOCKET_EVENTS.CALL_OFFER, {
+      this.emitToUser(data.targetUserId, "call_offer", {
         fromUserId: socket.userId,
         offer: data.offer,
       });
@@ -154,10 +185,10 @@ class SocketService {
     });
 
     // Event: Answer SDP
-    socket.on(SOCKET_EVENTS.CALL_ANSWER, (data, ack) => {
+    socket.on("call_answer", (data, ack) => {
       // { targetUserId, answer }
       const forwarded = userSockets.has(data.targetUserId);
-      this.emitToUser(data.targetUserId, SOCKET_EVENTS.CALL_ANSWER, {
+      this.emitToUser(data.targetUserId, "call_answer", {
         fromUserId: socket.userId,
         answer: data.answer,
       });
@@ -165,10 +196,10 @@ class SocketService {
     });
 
     // Event: ICE Candidate
-    socket.on(SOCKET_EVENTS.CALL_ICE_CANDIDATE, (data, ack) => {
+    socket.on("call_ice_candidate", (data, ack) => {
       // { targetUserId, candidate }
       const forwarded = userSockets.has(data.targetUserId);
-      this.emitToUser(data.targetUserId, SOCKET_EVENTS.CALL_ICE_CANDIDATE, {
+      this.emitToUser(data.targetUserId, "call_ice_candidate", {
         fromUserId: socket.userId,
         candidate: data.candidate,
       });
@@ -176,12 +207,59 @@ class SocketService {
     });
 
     // Event: End call
-    socket.on(SOCKET_EVENTS.CALL_END, (data, ack) => {
+    socket.on("call_end", (data, ack) => {
       // { targetUserId }
       const forwarded = userSockets.has(data.targetUserId);
-      this.emitToUser(data.targetUserId, SOCKET_EVENTS.CALL_END, {
+      this.emitToUser(data.targetUserId, "call_end", {
         fromUserId: socket.userId,
       });
+      if (ack) ack({ success: true, forwarded });
+    });
+
+    // Event: Call accepted by callee
+    socket.on("call_accept", (data, ack) => {
+      // data: { targetUserId } where targetUserId is the caller
+      const callerId = data.targetUserId;
+      const forwarded = userSockets.has(callerId);
+      // forward to caller that callee accepted
+      this.emitToUser(callerId, "call_accept", {
+        fromUserId: socket.userId,
+      });
+
+      // clear any pending timeout between caller and callee
+      try {
+        const key = `${callerId}:${socket.userId}`;
+        if (pendingCallTimers.has(key)) {
+          clearTimeout(pendingCallTimers.get(key));
+          pendingCallTimers.delete(key);
+        }
+      } catch (e) {
+        logger.warn("Error clearing call timeout on accept:", e.message || e);
+      }
+
+      if (ack) ack({ success: true, forwarded });
+    });
+
+    // Event: Call rejected by callee
+    socket.on("call_reject", (data, ack) => {
+      // data: { targetUserId } where targetUserId is the caller
+      const callerId = data.targetUserId;
+      const forwarded = userSockets.has(callerId);
+      this.emitToUser(callerId, "call_reject", {
+        fromUserId: socket.userId,
+      });
+
+      // clear timeout
+      try {
+        const key = `${callerId}:${socket.userId}`;
+        if (pendingCallTimers.has(key)) {
+          clearTimeout(pendingCallTimers.get(key));
+          pendingCallTimers.delete(key);
+        }
+      } catch (e) {
+        logger.warn("Error clearing call timeout on reject:", e.message || e);
+      }
+
       if (ack) ack({ success: true, forwarded });
     });
 
