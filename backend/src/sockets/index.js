@@ -141,6 +141,8 @@ class SocketService {
     // Event: Offer SDP
     socket.on(SOCKET_EVENTS.CALL_OFFER, (data) => {
       // { targetUserId, offer }
+      logger.info(`[SOCKET] CALL_OFFER received from ${socket.userId} for targetUserId ${data.targetUserId}`);
+      logger.info(`[SOCKET] Offer payload: ${JSON.stringify(data.offer)}`);
       this.emitToUser(data.targetUserId, SOCKET_EVENTS.CALL_OFFER, {
         fromUserId: socket.userId,
         offer: data.offer,
@@ -433,9 +435,13 @@ class SocketService {
   emitToUser(userId, event, data) {
     if (userSockets.has(userId)) {
       const sockets = userSockets.get(userId);
+      logger.info(`[SOCKET] emitToUser: Sending event '${event}' to userId ${userId} on sockets: ${Array.from(sockets).join(",")}`);
+      logger.info(`[SOCKET] emitToUser: Data: ${JSON.stringify(data)}`);
       sockets.forEach((socketId) => {
         this.io.to(socketId).emit(event, data);
       });
+    } else {
+      logger.warn(`[SOCKET] emitToUser: No sockets found for userId ${userId}`);
     }
   }
 
