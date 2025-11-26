@@ -130,49 +130,59 @@ class SocketService {
     });
 
     // Event: Initiate call
-    socket.on(SOCKET_EVENTS.CALL_INITIATE, (data) => {
+    socket.on(SOCKET_EVENTS.CALL_INITIATE, (data, ack) => {
       // { targetUserId, callType: "video" | "audio" }
+      const forwarded = userSockets.has(data.targetUserId);
       this.emitToUser(data.targetUserId, SOCKET_EVENTS.CALL_INITIATE, {
         fromUserId: socket.userId,
         callType: data.callType,
       });
+      if (ack) ack({ success: true, forwarded });
     });
 
     // Event: Offer SDP
-    socket.on(SOCKET_EVENTS.CALL_OFFER, (data) => {
+    socket.on(SOCKET_EVENTS.CALL_OFFER, (data, ack) => {
       // { targetUserId, offer }
       logger.info(`[SOCKET] CALL_OFFER received from ${socket.userId} for targetUserId ${data.targetUserId}`);
       logger.info(`[SOCKET] Offer payload: ${JSON.stringify(data.offer)}`);
+      const forwarded = userSockets.has(data.targetUserId);
       this.emitToUser(data.targetUserId, SOCKET_EVENTS.CALL_OFFER, {
         fromUserId: socket.userId,
         offer: data.offer,
       });
+      if (ack) ack({ success: true, forwarded });
     });
 
     // Event: Answer SDP
-    socket.on(SOCKET_EVENTS.CALL_ANSWER, (data) => {
+    socket.on(SOCKET_EVENTS.CALL_ANSWER, (data, ack) => {
       // { targetUserId, answer }
+      const forwarded = userSockets.has(data.targetUserId);
       this.emitToUser(data.targetUserId, SOCKET_EVENTS.CALL_ANSWER, {
         fromUserId: socket.userId,
         answer: data.answer,
       });
+      if (ack) ack({ success: true, forwarded });
     });
 
     // Event: ICE Candidate
-    socket.on(SOCKET_EVENTS.CALL_ICE_CANDIDATE, (data) => {
+    socket.on(SOCKET_EVENTS.CALL_ICE_CANDIDATE, (data, ack) => {
       // { targetUserId, candidate }
+      const forwarded = userSockets.has(data.targetUserId);
       this.emitToUser(data.targetUserId, SOCKET_EVENTS.CALL_ICE_CANDIDATE, {
         fromUserId: socket.userId,
         candidate: data.candidate,
       });
+      if (ack) ack({ success: true, forwarded });
     });
 
     // Event: End call
-    socket.on(SOCKET_EVENTS.CALL_END, (data) => {
+    socket.on(SOCKET_EVENTS.CALL_END, (data, ack) => {
       // { targetUserId }
+      const forwarded = userSockets.has(data.targetUserId);
       this.emitToUser(data.targetUserId, SOCKET_EVENTS.CALL_END, {
         fromUserId: socket.userId,
       });
+      if (ack) ack({ success: true, forwarded });
     });
 
     // Event: Disconnect
