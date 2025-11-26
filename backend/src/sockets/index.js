@@ -14,6 +14,11 @@ const socketUsers = new Map(); // socketId -> userId
 // Pending call timers keyed by `${fromUserId}:${targetUserId}` -> timeoutId
 const pendingCallTimers = new Map();
 
+// Helper to create a consistent key for pending calls (caller:callee)
+function callKey(a, b) {
+  return `${a}:${b}`;
+}
+
 class SocketService {
   constructor() {
     this.io = null;
@@ -151,16 +156,22 @@ class SocketService {
 
       // set a 30s timeout to notify both parties if unanswered
       try {
-        const key = `${socket.userId}:${targetId}`;
+        const key = callKey(socket.userId, targetId);
         if (pendingCallTimers.has(key)) {
           clearTimeout(pendingCallTimers.get(key));
           pendingCallTimers.delete(key);
         }
         const t = setTimeout(() => {
-          logger.info(`[SOCKET] call timeout for ${socket.userId} -> ${targetId}`);
+          logger.info(
+            `[SOCKET] call timeout for ${socket.userId} -> ${targetId}`
+          );
           // notify both sides
-          this.emitToUser(targetId, "call_timeout", { fromUserId: socket.userId });
-          this.emitToUser(socket.userId, "call_timeout", { targetUserId: targetId });
+          this.emitToUser(targetId, "call_timeout", {
+            fromUserId: socket.userId,
+          });
+          this.emitToUser(socket.userId, "call_timeout", {
+            targetUserId: targetId,
+          });
           pendingCallTimers.delete(key);
         }, 30000);
         pendingCallTimers.set(key, t);
@@ -174,8 +185,16 @@ class SocketService {
     // Event: Offer SDP
     socket.on("call_offer", (data, ack) => {
       // { targetUserId, offer }
-      logger.info(`[SOCKET] CALL_OFFER received from ${socket.userId} for targetUserId ${data.targetUserId}`);
+      logger.info(
+        `[SOCKET] CALL_OFFER received from ${socket.userId} for targetUserId ${data.targetUserId}`
+      );
       logger.info(`[SOCKET] Offer payload: ${JSON.stringify(data.offer)}`);
+      // Validate offer object
+      if (!data || !data.offer || typeof data.offer !== "object" || !data.offer.type) {
+        logger.warn("Invalid call_offer payload", data);
+        if (ack) ack({ success: false, forwarded: false, error: "invalid_offer" });
+        return;
+      }
       const forwarded = userSockets.has(data.targetUserId);
       this.emitToUser(data.targetUserId, "call_offer", {
         fromUserId: socket.userId,
@@ -187,6 +206,12 @@ class SocketService {
     // Event: Answer SDP
     socket.on("call_answer", (data, ack) => {
       // { targetUserId, answer }
+      // Validate answer object
+      if (!data || !data.answer || typeof data.answer !== "object" || !data.answer.type) {
+        logger.warn("Invalid call_answer payload", data);
+        if (ack) ack({ success: false, forwarded: false, error: "invalid_answer" });
+        return;
+      }
       const forwarded = userSockets.has(data.targetUserId);
       this.emitToUser(data.targetUserId, "call_answer", {
         fromUserId: socket.userId,
@@ -228,7 +253,7 @@ class SocketService {
 
       // clear any pending timeout between caller and callee
       try {
-        const key = `${callerId}:${socket.userId}`;
+        const key = callKey(callerId, socket.userId);
         if (pendingCallTimers.has(key)) {
           clearTimeout(pendingCallTimers.get(key));
           pendingCallTimers.delete(key);
@@ -251,7 +276,7 @@ class SocketService {
 
       // clear timeout
       try {
-        const key = `${callerId}:${socket.userId}`;
+        const key = callKey(callerId, socket.userId);
         if (pendingCallTimers.has(key)) {
           clearTimeout(pendingCallTimers.get(key));
           pendingCallTimers.delete(key);
@@ -503,6 +528,22 @@ class SocketService {
       if (userSockets.get(userId).size === 0) {
         userSockets.delete(userId);
 
+        // Clean up any pending call timers involving this user (caller or callee)
+        try {
+          for (const [key, timeout] of pendingCallTimers.entries()) {
+            if (key.startsWith(`${userId}:`) || key.endsWith(`:${userId}`)) {
+              try {
+                clearTimeout(timeout);
+              } catch (e) {
+                logger.warn("Error clearing pending call timeout:", e.message || e);
+              }
+              pendingCallTimers.delete(key);
+            }
+          }
+        } catch (e) {
+          logger.warn("Error cleaning pendingCallTimers on disconnect:", e.message || e);
+        }
+
         // Update user offline status
         await UserService.updateOnlineStatus(userId, false);
 
@@ -523,7 +564,11 @@ class SocketService {
   emitToUser(userId, event, data) {
     if (userSockets.has(userId)) {
       const sockets = userSockets.get(userId);
-      logger.info(`[SOCKET] emitToUser: Sending event '${event}' to userId ${userId} on sockets: ${Array.from(sockets).join(",")}`);
+      logger.info(
+        `[SOCKET] emitToUser: Sending event '${event}' to userId ${userId} on sockets: ${Array.from(
+          sockets
+        ).join(",")}`
+      );
       logger.info(`[SOCKET] emitToUser: Data: ${JSON.stringify(data)}`);
       sockets.forEach((socketId) => {
         this.io.to(socketId).emit(event, data);
